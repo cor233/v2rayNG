@@ -1,61 +1,130 @@
-name: Sync Releases
+name: 同步 Releases
 
 on:
-  schedule:
-    - cron: '5 0 * * *'
   workflow_dispatch:
+  schedule:
+    - cron: '5 0 * * *'   # 比代码同步晚 5 分钟，确保标签已存在
 
 jobs:
-  sync-releases:
+  sync-all-releases:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write      # 允许创建 Release 和上传资产
     steps:
-      - name: Sync releases
+      - name: 获取源仓库所有 Releases（按时间排序）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 获取源仓库 releases
-          releases=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/2dust/v2rayNG/releases")
+          SOURCE_REPO="2dust/v2rayNG"
+          PAGE=1
+          PER_PAGE=100
+          RELEASES_JSON=""
 
-          # 获取目标仓库已有 releases
-          existing=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/cor233/v2rayNG/releases")
+          # 分页获取全部 Release
+          while true; do
+            API_URL="https://api.github.com/repos/${SOURCE_REPO}/releases?per_page=${PER_PAGE}&page=${PAGE}"
+            RESPONSE=$(curl -s -H "Accept: application/vnd.github.v3+json" \
+              -H "Authorization: token $GH_TOKEN" \
+              "$API_URL")
 
-          echo "$releases" | jq -c '.[]' | while read -r release; do
-            tag_name=$(echo "$release" | jq -r '.tag_name')
-            if echo "$existing" | jq -e --arg tag "$tag_name" '.[] | select(.tag_name == $tag)' > /dev/null; then
-              echo "Release $tag_name already exists, skipping."
-              continue
+            # 安全检查响应是否为数组
+            if ! echo "$RESPONSE" | jq -e 'type == "array"' > /dev/null 2>&1; then
+              echo "错误：API 响应不是数组，退出。"
+              echo "响应内容：$RESPONSE"
+              exit 1
             fi
 
-            name=$(echo "$release" | jq -r '.name')
-            body=$(echo "$release" | jq -r '.body')
-            prerelease=$(echo "$release" | jq -r '.prerelease')
-            draft=$(echo "$release" | jq -r '.draft')
+            # 如果空数组，结束分页
+            if [ "$(echo "$RESPONSE" | jq length)" -eq 0 ]; then
+              break
+            fi
 
-            response=$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "{
-                \"tag_name\": \"$tag_name\",
-                \"name\": \"$name\",
-                \"body\": \"$body\",
-                \"prerelease\": $prerelease,
-                \"draft\": $draft
-              }" \
-              "https://api.github.com/repos/cor233/v2rayNG/releases")
+            # 合并所有页数据
+            if [ -z "$RELEASES_JSON" ]; then
+              RELEASES_JSON="$RESPONSE"
+            else
+              RELEASES_JSON=$(echo "$RELEASES_JSON" "$RESPONSE" | jq -s 'add')
+            fi
 
-            upload_url=$(echo "$response" | jq -r '.upload_url' | sed 's/{?name,label}//')
-
-            echo "$release" | jq -c '.assets[]' | while read -r asset; do
-              asset_name=$(echo "$asset" | jq -r '.name')
-              asset_url=$(echo "$asset" | jq -r '.browser_download_url')
-              echo "Downloading $asset_name..."
-              curl -sL -o "$asset_name" "$asset_url"
-              echo "Uploading $asset_name..."
-              curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
-                -H "Content-Type: application/octet-stream" \
-                --data-binary "@$asset_name" \
-                "$upload_url?name=$asset_name"
-              rm "$asset_name"
-            done
+            PAGE=$((PAGE + 1))
+            sleep 0.5
           done
+
+          # 按发布时间升序排列（先发布的先同步）
+          RELEASES_JSON=$(echo "$RELEASES_JSON" | jq 'sort_by(.published_at)')
+          echo "$RELEASES_JSON" > releases.json
+
+      - name: 按顺序处理每个 Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TARGET_REPO="${{ github.repository }}"   # 即 cor233/v2rayNG
+
+          jq -c '.[]' releases.json | while IFS= read -r release; do
+            TAG_NAME=$(echo "$release" | jq -r '.tag_name')
+            TITLE=$(echo "$release" | jq -r '.name // .tag_name')
+            BODY=$(echo "$release" | jq -r '.body // ""')
+            IS_PRERELEASE=$(echo "$release" | jq -r '.prerelease')
+            IS_DRAFT=$(echo "$release" | jq -r '.draft')
+
+            echo "=============================="
+            echo "处理 Release: $TAG_NAME"
+
+            # 检查目标仓库是否已有同名 Release
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/$TARGET_REPO/releases/tags/$TAG_NAME")
+
+            if [ "$HTTP_STATUS" -eq 200 ]; then
+              echo "已存在，跳过。"
+              continue
+            elif [ "$HTTP_STATUS" -ne 404 ]; then
+              echo "警告：检查 Release 时返回状态码 $HTTP_STATUS，将尝试创建。"
+            fi
+
+            # 构建 gh release create 命令
+            CREATE_CMD="gh release create \"$TAG_NAME\" --repo \"$TARGET_REPO\" --title \"$TITLE\""
+            if [ -n "$BODY" ]; then
+              echo "$BODY" > body.txt
+              CREATE_CMD="$CREATE_CMD --notes-file body.txt"
+            fi
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              CREATE_CMD="$CREATE_CMD --prerelease"
+            fi
+            if [ "$IS_DRAFT" = "true" ]; then
+              CREATE_CMD="$CREATE_CMD --draft"
+            fi
+
+            # 创建 Release
+            if ! eval "$CREATE_CMD"; then
+              echo "❌ 创建 Release $TAG_NAME 失败，退出。"
+              exit 1
+            fi
+
+            # 下载并上传资产
+            ASSET_URLS=$(echo "$release" | jq -r '.assets[]?.browser_download_url')
+            if [ -n "$ASSET_URLS" ]; then
+              TEMP_DIR=$(mktemp -d)
+              cd "$TEMP_DIR"
+              echo "$ASSET_URLS" | while IFS= read -r url; do
+                if [ -n "$url" ]; then
+                  echo "  ⬇️ 下载: $url"
+                  if curl -f -s -L -O "$url"; then
+                    echo "    下载成功"
+                  else
+                    echo "    下载失败"
+                  fi
+                fi
+              done
+              # 上传该临时目录下所有文件
+              for file in *; do
+                if [ -f "$file" ]; then
+                  echo "  ⬆️ 上传: $file"
+                  gh release upload "$TAG_NAME" "$file" --repo "$TARGET_REPO" --clobber
+                fi
+              done
+              cd ..
+              rm -rf "$TEMP_DIR"
+            fi
+            rm -f body.txt
+          done
