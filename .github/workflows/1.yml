@@ -2,7 +2,6 @@ name: Sync Releases
 
 on:
   schedule:
-    # 在代码同步之后运行，可以设晚几分钟
     - cron: '5 0 * * *'
   workflow_dispatch:
 
@@ -10,20 +9,53 @@ jobs:
   sync-releases:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch source releases
-        id: fetch
-        uses: octokit/request-action@v2.x
-        with:
-          route: GET /repos/2dust/v2rayNG/releases
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # 使用自带的 token 只读访问公开仓库即可
+      - name: Sync releases
+        run: |
+          # 获取源仓库 releases
+          releases=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/2dust/v2rayNG/releases")
 
-      - name: Sync releases to target
-        uses: octokit/request-action@v2.x
-        with:
-          # 遍历源仓库的所有 Release
-          route: POST /repos/cor233/v2rayNG/releases
-          # 这里需要把源 Release 信息逐个创建到目标仓库
-          # 使用脚本处理会比较灵活，我们改用 run 步骤
+          # 获取目标仓库已有 releases
+          existing=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/cor233/v2rayNG/releases")
+
+          echo "$releases" | jq -c '.[]' | while read -r release; do
+            tag_name=$(echo "$release" | jq -r '.tag_name')
+            if echo "$existing" | jq -e --arg tag "$tag_name" '.[] | select(.tag_name == $tag)' > /dev/null; then
+              echo "Release $tag_name already exists, skipping."
+              continue
+            fi
+
+            name=$(echo "$release" | jq -r '.name')
+            body=$(echo "$release" | jq -r '.body')
+            prerelease=$(echo "$release" | jq -r '.prerelease')
+            draft=$(echo "$release" | jq -r '.draft')
+
+            response=$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"tag_name\": \"$tag_name\",
+                \"name\": \"$name\",
+                \"body\": \"$body\",
+                \"prerelease\": $prerelease,
+                \"draft\": $draft
+              }" \
+              "https://api.github.com/repos/cor233/v2rayNG/releases")
+
+            upload_url=$(echo "$response" | jq -r '.upload_url' | sed 's/{?name,label}//')
+
+            echo "$release" | jq -c '.assets[]' | while read -r asset; do
+              asset_name=$(echo "$asset" | jq -r '.name')
+              asset_url=$(echo "$asset" | jq -r '.browser_download_url')
+              echo "Downloading $asset_name..."
+              curl -sL -o "$asset_name" "$asset_url"
+              echo "Uploading $asset_name..."
+              curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@$asset_name" \
+                "$upload_url?name=$asset_name"
+              rm "$asset_name"
+            done
+          done
         env:
-          GITHUB_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
