@@ -1,0 +1,29 @@
+name: Sync Releases
+
+on:
+  schedule:
+    # 在代码同步之后运行，可以设晚几分钟
+    - cron: '5 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync-releases:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch source releases
+        id: fetch
+        uses: octokit/request-action@v2.x
+        with:
+          route: GET /repos/2dust/v2rayNG/releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # 使用自带的 token 只读访问公开仓库即可
+
+      - name: Sync releases to target
+        uses: octokit/request-action@v2.x
+        with:
+          # 遍历源仓库的所有 Release
+          route: POST /repos/cor233/v2rayNG/releases
+          # 这里需要把源 Release 信息逐个创建到目标仓库
+          # 使用脚本处理会比较灵活，我们改用 run 步骤
+        env:
+          GITHUB_TOKEN: ${{ secrets.SYNC_TOKEN }}
