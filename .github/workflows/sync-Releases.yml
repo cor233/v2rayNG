@@ -3,15 +3,15 @@ name: 同步 Releases
 on:
   workflow_dispatch:
   schedule:
-    - cron: '5 0 * * *'   # 比代码同步晚 5 分钟，确保标签已存在
+    - cron: '0 0 * * *'
 
 jobs:
   sync-all-releases:
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # 允许创建 Release 和上传资产
+      contents: write
     steps:
-      - name: 获取源仓库所有 Releases（按时间排序）
+      - name: 获取源仓库所有 Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -20,26 +20,22 @@ jobs:
           PER_PAGE=100
           RELEASES_JSON=""
 
-          # 分页获取全部 Release
           while true; do
             API_URL="https://api.github.com/repos/${SOURCE_REPO}/releases?per_page=${PER_PAGE}&page=${PAGE}"
             RESPONSE=$(curl -s -H "Accept: application/vnd.github.v3+json" \
               -H "Authorization: token $GH_TOKEN" \
               "$API_URL")
 
-            # 安全检查响应是否为数组
             if ! echo "$RESPONSE" | jq -e 'type == "array"' > /dev/null 2>&1; then
               echo "错误：API 响应不是数组，退出。"
               echo "响应内容：$RESPONSE"
               exit 1
             fi
 
-            # 如果空数组，结束分页
             if [ "$(echo "$RESPONSE" | jq length)" -eq 0 ]; then
               break
             fi
 
-            # 合并所有页数据
             if [ -z "$RELEASES_JSON" ]; then
               RELEASES_JSON="$RESPONSE"
             else
@@ -50,7 +46,6 @@ jobs:
             sleep 0.5
           done
 
-          # 按发布时间升序排列（先发布的先同步）
           RELEASES_JSON=$(echo "$RELEASES_JSON" | jq 'sort_by(.published_at)')
           echo "$RELEASES_JSON" > releases.json
 
@@ -58,7 +53,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TARGET_REPO="${{ github.repository }}"   # 即 cor233/v2rayNG
+          TARGET_REPO="${{ github.repository }}"
 
           jq -c '.[]' releases.json | while IFS= read -r release; do
             TAG_NAME=$(echo "$release" | jq -r '.tag_name')
@@ -70,7 +65,6 @@ jobs:
             echo "=============================="
             echo "处理 Release: $TAG_NAME"
 
-            # 检查目标仓库是否已有同名 Release
             HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               -H "Authorization: token $GH_TOKEN" \
               "https://api.github.com/repos/$TARGET_REPO/releases/tags/$TAG_NAME")
@@ -82,7 +76,6 @@ jobs:
               echo "警告：检查 Release 时返回状态码 $HTTP_STATUS，将尝试创建。"
             fi
 
-            # 构建 gh release create 命令
             CREATE_CMD="gh release create \"$TAG_NAME\" --repo \"$TARGET_REPO\" --title \"$TITLE\""
             if [ -n "$BODY" ]; then
               echo "$BODY" > body.txt
@@ -95,13 +88,11 @@ jobs:
               CREATE_CMD="$CREATE_CMD --draft"
             fi
 
-            # 创建 Release
             if ! eval "$CREATE_CMD"; then
               echo "❌ 创建 Release $TAG_NAME 失败，退出。"
               exit 1
             fi
 
-            # 下载并上传资产
             ASSET_URLS=$(echo "$release" | jq -r '.assets[]?.browser_download_url')
             if [ -n "$ASSET_URLS" ]; then
               TEMP_DIR=$(mktemp -d)
@@ -116,7 +107,6 @@ jobs:
                   fi
                 fi
               done
-              # 上传该临时目录下所有文件
               for file in *; do
                 if [ -f "$file" ]; then
                   echo "  ⬆️ 上传: $file"
