@@ -36,6 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,19 +46,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.R
-import com.v2ray.ang.compose.ItemDivider
-import com.v2ray.ang.compose.ReorderableGridItem
-import com.v2ray.ang.compose.ReorderableListItem
-import com.v2ray.ang.compose.colorConfigType
-import com.v2ray.ang.compose.colorPing
-import com.v2ray.ang.compose.colorPingRed
-import com.v2ray.ang.compose.verticalScrollbar
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.dto.entities.ServersCache
 import com.v2ray.ang.extension.isComplexType
 import com.v2ray.ang.extension.nullIfBlank
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.ui.compose.ItemDivider
+import com.v2ray.ang.ui.compose.ReorderableGridItem
+import com.v2ray.ang.ui.compose.ReorderableListItem
+import com.v2ray.ang.ui.compose.colorConfigType
+import com.v2ray.ang.ui.compose.colorPing
+import com.v2ray.ang.ui.compose.colorPingRed
+import com.v2ray.ang.ui.compose.verticalScrollbar
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -98,7 +101,7 @@ fun GroupPagerPage(
         onShareServer = onShareServer,
         onMoreServer = onMoreServer,
         onRemoveServer = onRemoveServer,
-        onSwapServer = mainViewModel::swapServer,
+        onMoveServer = { fromIndex, toIndex -> mainViewModel.moveServer(groupId, fromIndex, toIndex) },
         contentPadding = contentPadding
     )
 }
@@ -119,7 +122,7 @@ private fun ServerListPage(
     onShareServer: (String, ProfileItem) -> Unit,
     onMoreServer: (String, ProfileItem) -> Unit,
     onRemoveServer: (String) -> Unit,
-    onSwapServer: (Int, Int) -> Unit,
+    onMoveServer: (Int, Int) -> Unit,
     contentPadding: PaddingValues
 ) {
     if (doubleColumnDisplay) {
@@ -128,7 +131,7 @@ private fun ServerListPage(
         }
         val reorderableGridState = if (canReorder) {
             rememberReorderableLazyGridState(gridState) { from, to ->
-                onSwapServer(from.index, to.index)
+                onMoveServer(from.index, to.index)
             }
         } else null
 
@@ -175,7 +178,7 @@ private fun ServerListPage(
         }
         val reorderableState = if (canReorder) {
             rememberReorderableLazyListState(listState) { from, to ->
-                onSwapServer(from.index, to.index)
+                onMoveServer(from.index, to.index)
             }
         } else null
 
@@ -249,7 +252,6 @@ private fun ServerItemRow(
         statistics = profile.description.nullIfBlank()
             ?: AngConfigManager.generateDescription(profile),
         typeDescription = getProtocolDescription(profile),
-        testResult = serverCache.testDelayString,
         testDelayMillis = serverCache.testDelayMillis,
         isSelected = serverCache.guid == selectedGuid,
         subscriptionRemarks = subRemarks,
@@ -283,7 +285,6 @@ private fun ServerItemColumn(
             remarks = profile.remarks,
             statistics = profile.description.nullIfBlank() ?: AngConfigManager.generateDescription(profile),
             typeDescription = getProtocolDescription(profile),
-            testResult = serverCache.testDelayString,
             testDelayMillis = serverCache.testDelayMillis,
             isSelected = serverCache.guid == selectedGuid,
             subscriptionRemarks = subRemarks,
@@ -303,7 +304,6 @@ fun ServerListItem(
     remarks: String,
     statistics: String,
     typeDescription: String,
-    testResult: String,
     testDelayMillis: Long,
     isSelected: Boolean,
     subscriptionRemarks: String,
@@ -316,10 +316,25 @@ fun ServerListItem(
     modifier: Modifier = Modifier,
     dragModifier: Modifier = Modifier
 ) {
+    val testResult = if (testDelayMillis == 0L) {
+        ""
+    } else {
+        stringResource(R.string.server_test_delay_value, testDelayMillis)
+    }
+    val selectedStateDescription = if (isSelected) {
+        stringResource(R.string.acc_selected_server)
+    } else {
+        null
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
+            .semantics {
+                if (selectedStateDescription != null) {
+                    stateDescription = selectedStateDescription
+                }
+            }
             .clickable(onClick = onClick)
             .then(dragModifier)
     ) {
@@ -351,12 +366,34 @@ fun ServerListItem(
                 Text(remarks, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge.copy(lineBreak = LineBreak.Paragraph), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (doubleColumnDisplay) {
                     IconButton(onClick = onMore, Modifier.size(36.dp)) {
-                        Icon(painterResource(R.drawable.ic_more_vert_24dp), null, Modifier.size(24.dp))
+                        Icon(
+                            painterResource(R.drawable.ic_more_vert_24dp),
+                            stringResource(R.string.acc_more),
+                            Modifier.size(24.dp)
+                        )
                     }
                 } else {
-                    IconButton(onClick = onShare, Modifier.size(36.dp)) { Icon(painterResource(R.drawable.ic_share_24dp), null, Modifier.size(24.dp)) }
-                    IconButton(onClick = onEdit, Modifier.size(36.dp)) { Icon(painterResource(R.drawable.ic_edit_24dp), null, Modifier.size(24.dp)) }
-                    IconButton(onClick = onRemove, Modifier.size(36.dp)) { Icon(painterResource(R.drawable.ic_delete_24dp), null, Modifier.size(24.dp)) }
+                    IconButton(onClick = onShare, Modifier.size(36.dp)) {
+                        Icon(
+                            painterResource(R.drawable.ic_share_24dp),
+                            stringResource(R.string.title_configuration_share),
+                            Modifier.size(24.dp)
+                        )
+                    }
+                    IconButton(onClick = onEdit, Modifier.size(36.dp)) {
+                        Icon(
+                            painterResource(R.drawable.ic_edit_24dp),
+                            stringResource(R.string.acc_edit),
+                            Modifier.size(24.dp)
+                        )
+                    }
+                    IconButton(onClick = onRemove, Modifier.size(36.dp)) {
+                        Icon(
+                            painterResource(R.drawable.ic_delete_24dp),
+                            stringResource(R.string.acc_delete),
+                            Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(6.dp))

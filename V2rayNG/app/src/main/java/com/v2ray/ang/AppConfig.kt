@@ -56,7 +56,9 @@ object AppConfig {
     const val PREF_DOUBLE_COLUMN_DISPLAY = "pref_double_column_display"
     const val PREF_GROUP_ALL_DISPLAY = "pref_group_all_display"
     const val PREF_LANGUAGE = "pref_language"
+    const val PREF_APP_LOCALE_MIGRATED = "pref_app_locale_migrated"
     const val PREF_UI_MODE_NIGHT = "pref_ui_mode_night"
+    const val PREF_DYNAMIC_COLOR = "pref_dynamic_color"
     const val PREF_IPV6_ENABLED = "pref_ipv6_enabled"
     const val PREF_PREFER_IPV6 = "pref_prefer_ipv6"
     const val PREF_PROXY_SHARING = "pref_proxy_sharing_enabled"
@@ -178,7 +180,7 @@ object AppConfig {
     const val MSG_STATE_STOP_SUCCESS = 41
     const val MSG_STATE_RESTART = 5
     const val MSG_MEASURE_DELAY = 6
-    const val MSG_MEASURE_DELAY_SUCCESS = 61
+    const val MSG_MEASURE_DELAY_RESULT = 61
     const val MSG_MEASURE_CONFIG_START = 7
     const val MSG_MEASURE_CONFIG_CANCEL = 71
     const val MSG_MEASURE_CONFIG_SUCCESS = 72
@@ -189,7 +191,8 @@ object AppConfig {
     const val MSG_SUB_UPDATE_CANCEL = 81
 
     /** Notification channel IDs and names. */
-    const val RAY_NG_CHANNEL_ID = "CORE_M_CH_ID"
+    // Use a new ID because Android does not let an app raise an existing channel's importance.
+    const val RAY_NG_CHANNEL_ID = "CORE_M_CH_ID_V2"
     const val RAY_NG_CHANNEL_NAME = "Core Background Service"
 
     /** Protocols Scheme **/

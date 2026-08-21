@@ -5,6 +5,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
@@ -12,7 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
-import com.v2ray.ang.core.CoreServiceManager
+import com.v2ray.ang.core.LauncherManager
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.enums.EConfigType
 import com.v2ray.ang.enums.PermissionType
@@ -74,10 +75,10 @@ class MainActivity : HelperBaseComponentActivity() {
             val restartService = data.getBooleanExtra(
                 ProfileEditorResult.EXTRA_RESTART_SERVICE, false
             )
+            val selectedProfileSaved = action == ProfileEditorResult.ACTION_SAVED &&
+                data.getStringExtra(ProfileEditorResult.EXTRA_GUID) == mainViewModel.uiState.value.selectedGuid
             mainViewModel.onAction(MainAction.RefreshGroups)
-            if (restartService && mainViewModel.uiState.value.isRunning) {
-                restartV2Ray()
-            }
+            if (restartService || selectedProfileSaved) LauncherManager.restartService(this)
         }
 
     private val settingsActivityLauncher =
@@ -86,7 +87,7 @@ class MainActivity : HelperBaseComponentActivity() {
             val refreshGroups = SettingsChangeManager.consumeSetupGroupTab()
             mainViewModel.refreshUiSettings()
             if (refreshGroups) mainViewModel.onAction(MainAction.RefreshGroups)
-            if (restartService && mainViewModel.uiState.value.isRunning) restartV2Ray()
+            if (restartService) LauncherManager.restartService(this)
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -98,6 +99,7 @@ class MainActivity : HelperBaseComponentActivity() {
 
     @Composable
     override fun ScreenContent() {
+        BackHandler { moveTaskToBack(false) }
         MainScreen(
             mainViewModel = mainViewModel,
             onAction = { action ->
@@ -108,7 +110,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     MainAction.ImportClipboard -> importClipboard()
                     MainAction.ImportConfigLocal -> importConfigLocal()
                     is MainAction.ImportManually -> importManually(action.type)
-                    MainAction.RestartService -> restartV2Ray()
+                    MainAction.RestartService -> LauncherManager.restartServiceOrStart(this, ::requestServiceStart)
                     MainAction.LocateSelectedServer -> mainViewModel.triggerLocateSelectedServer()
                     is MainAction.SelectServer -> setSelectServer(action.guid)
                     is MainAction.EditServer -> editServer(action.guid, action.profile)
@@ -118,8 +120,6 @@ class MainActivity : HelperBaseComponentActivity() {
                 }
             },
             onNavigate = { route -> navigateTo(route) },
-            shareMethodEntries = resources.getStringArray(R.array.share_method).toList(),
-            shareMethodMoreEntries = resources.getStringArray(R.array.share_method_more).toList()
         )
     }
 
@@ -136,39 +136,43 @@ class MainActivity : HelperBaseComponentActivity() {
         }
     }
 
-    private fun navigateTo(destination: String) {
+    private fun navigateTo(destination: MainDestination) {
         val intent = when (destination) {
-            "sub_setting" -> Intent(this, SubSettingActivity::class.java)
-            "per_app_proxy" -> Intent(this, PerAppProxyActivity::class.java)
-            "routing_setting" -> Intent(this, RoutingSettingActivity::class.java)
-            "user_asset" -> Intent(this, UserAssetActivity::class.java)
-            "settings" -> Intent(this, SettingsActivity::class.java)
-            "logcat" -> Intent(this, LogcatActivity::class.java)
-            "check_update" -> Intent(this, CheckUpdateActivity::class.java)
-            "backup_restore" -> Intent(this, BackupActivity::class.java)
-            "about" -> Intent(this, AboutActivity::class.java)
-            "promotion" -> {
+            MainDestination.Subscriptions -> Intent(this, SubSettingActivity::class.java)
+            MainDestination.PerAppProxy -> Intent(this, PerAppProxyActivity::class.java)
+            MainDestination.Routing -> Intent(this, RoutingSettingActivity::class.java)
+            MainDestination.UserAssets -> Intent(this, UserAssetActivity::class.java)
+            MainDestination.Settings -> Intent(this, SettingsActivity::class.java)
+            MainDestination.Logcat -> Intent(this, LogcatActivity::class.java)
+            MainDestination.CheckUpdate -> Intent(this, CheckUpdateActivity::class.java)
+            MainDestination.BackupRestore -> Intent(this, BackupActivity::class.java)
+            MainDestination.About -> Intent(this, AboutActivity::class.java)
+            MainDestination.Promotion -> {
                 Utils.openUri(
                     this,
                     "${Utils.decode(AppConfig.APP_PROMOTION_URL)}?t=${System.currentTimeMillis()}"
                 )
                 return
             }
-
-            else -> return
         }
         settingsActivityLauncher.launch(intent)
     }
 
     private fun handleFabAction() {
         if (mainViewModel.uiState.value.isRunning) {
-            CoreServiceManager.stopVService(this)
-        } else if (SettingsManager.isVpnMode()) {
-            val intent = VpnService.prepare(this)
-            if (intent == null) startV2Ray() else requestVpnPermission.launch(intent)
+            LauncherManager.stopService(this)
         } else {
-            startV2Ray()
+            requestServiceStart()
         }
+    }
+
+    private fun requestServiceStart() {
+        if (!SettingsManager.isVpnMode()) {
+            startV2Ray()
+            return
+        }
+        val intent = VpnService.prepare(this)
+        if (intent == null) startV2Ray() else requestVpnPermission.launch(intent)
     }
 
     private fun handleLayoutTestClick() {
@@ -187,15 +191,7 @@ class MainActivity : HelperBaseComponentActivity() {
         ) {
             checkAndRequestPermission(PermissionType.ACCESS_LOCAL_NETWORK) {}
         }
-        CoreServiceManager.startVService(this)
-    }
-
-    private fun restartV2Ray() {
-        if (mainViewModel.uiState.value.isRunning) CoreServiceManager.stopVService(this)
-        lifecycleScope.launch {
-            kotlinx.coroutines.delay(500)
-            startV2Ray()
-        }
+        LauncherManager.startService(this)
     }
 
     private fun importManually(createConfigType: Int) {
@@ -277,12 +273,12 @@ class MainActivity : HelperBaseComponentActivity() {
         val selected = mainViewModel.uiState.value.selectedGuid
         if (guid != selected) {
             mainViewModel.updateSelectedGuid(guid)
-            if (mainViewModel.uiState.value.isRunning) restartV2Ray()
+            LauncherManager.restartService(this)
         }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_BUTTON_B) {
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_B) {
             moveTaskToBack(false)
             return true
         }

@@ -1,4 +1,4 @@
-package com.v2ray.ang.compose
+package com.v2ray.ang.ui.compose
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -78,6 +78,7 @@ fun FormDropdownField(
     editable: Boolean = false,
     enabled: Boolean = true,
     placeholder: String? = null,
+    supportingText: String? = null,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val menuScrollState = rememberScrollState()
@@ -104,6 +105,7 @@ fun FormDropdownField(
             enabled = enabled,
             label = { Text(label) },
             placeholder = { if (placeholder != null) Text(placeholder) },
+            supportingText = supportingText?.let { { Text(it) } },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = Color.Transparent,

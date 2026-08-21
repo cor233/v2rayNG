@@ -3,12 +3,13 @@ package com.v2ray.ang.ui.userasset
 import android.os.Bundle
 import android.text.TextUtils
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,14 +21,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
-import com.v2ray.ang.compose.AppTopBar
-import com.v2ray.ang.compose.ConfirmDialog
-import com.v2ray.ang.compose.FormTextField
 import com.v2ray.ang.dto.entities.AssetUrlItem
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.ui.base.BaseComponentActivity
+import com.v2ray.ang.ui.compose.AppTopBar
+import com.v2ray.ang.ui.compose.DeleteConfirmDialog
+import com.v2ray.ang.ui.compose.FormTextField
+import com.v2ray.ang.ui.compose.NavigationBarsSpacer
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
 import java.io.File
@@ -142,7 +144,7 @@ fun UserAssetUrlScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             AppTopBar(
                 title = stringResource(R.string.title_user_asset_add_url),
@@ -152,14 +154,14 @@ fun UserAssetUrlScreen(
                         IconButton(onClick = { showDeleteConfirm = true }) {
                             Icon(
                                 painterResource(R.drawable.ic_delete_24dp),
-                                contentDescription = stringResource(R.string.menu_item_del_config)
+                                contentDescription = stringResource(R.string.acc_delete)
                             )
                         }
                     }
                     IconButton(onClick = { onSave(remarks, url) }) {
                         Icon(
                             painterResource(R.drawable.ic_fab_check),
-                            contentDescription = stringResource(R.string.menu_item_save_config)
+                            contentDescription = stringResource(R.string.acc_save)
                         )
                     }
                 }
@@ -182,14 +184,13 @@ fun UserAssetUrlScreen(
                 value = url,
                 onValueChange = { url = it }
             )
+            NavigationBarsSpacer()
         }
     }
 
     if (showDeleteConfirm) {
-        ConfirmDialog(
-            message = stringResource(R.string.del_config_comfirm),
-            confirmText = stringResource(android.R.string.ok),
-            dismissText = stringResource(android.R.string.cancel),
+        DeleteConfirmDialog(
+            message = stringResource(R.string.confirm_delete_asset_source),
             onConfirm = onDelete,
             onDismiss = { showDeleteConfirm = false }
         )

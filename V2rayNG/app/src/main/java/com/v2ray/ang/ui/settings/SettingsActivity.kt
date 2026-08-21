@@ -1,9 +1,11 @@
 package com.v2ray.ang.ui.settings
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -11,10 +13,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -25,19 +28,22 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.VPN
 import com.v2ray.ang.R
-import com.v2ray.ang.compose.AppTopBar
-import com.v2ray.ang.compose.CollapsiblePreferenceGroupHeader
-import com.v2ray.ang.compose.SettingsEditItem
-import com.v2ray.ang.compose.SettingsListItem
-import com.v2ray.ang.compose.SettingsMenuItem
-import com.v2ray.ang.compose.SettingsSwitchItem
-import com.v2ray.ang.compose.ThemeManager
-import com.v2ray.ang.compose.verticalScrollbar
+import com.v2ray.ang.handler.AppLocaleManager
+import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.MmkvManager.rememberMmkvBool
 import com.v2ray.ang.handler.MmkvManager.rememberMmkvString
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.root.RootManager
 import com.v2ray.ang.ui.base.BaseComponentActivity
+import com.v2ray.ang.ui.compose.AppTopBar
+import com.v2ray.ang.ui.compose.CollapsiblePreferenceGroupHeader
+import com.v2ray.ang.ui.compose.NavigationBarsSpacer
+import com.v2ray.ang.ui.compose.SettingsEditItem
+import com.v2ray.ang.ui.compose.SettingsListItem
+import com.v2ray.ang.ui.compose.SettingsMenuItem
+import com.v2ray.ang.ui.compose.SettingsSwitchItem
+import com.v2ray.ang.ui.compose.ThemeManager
+import com.v2ray.ang.ui.compose.verticalScrollbar
 import com.v2ray.ang.util.Utils
 
 class SettingsActivity : BaseComponentActivity() {
@@ -73,8 +79,8 @@ fun SettingsScreen(
     var muxSettingsExpanded by rememberSaveable { mutableStateOf(false) }
     var fragmentSettingsExpanded by rememberSaveable { mutableStateOf(false) }
     var observatorySettingsExpanded by rememberSaveable { mutableStateOf(false) }
-    var advancedSettingsExpanded by rememberSaveable { mutableStateOf(false) }
-    var modeSettingsExpanded by rememberSaveable { mutableStateOf(false) }
+    var advancedSettingsExpanded by rememberSaveable { mutableStateOf(true) }
+    var modeSettingsExpanded by rememberSaveable { mutableStateOf(true) }
 
     var localDns by rememberMmkvBool(AppConfig.PREF_LOCAL_DNS_ENABLED, false)
     var fakeDns by rememberMmkvBool(AppConfig.PREF_FAKE_DNS_ENABLED, false)
@@ -120,8 +126,13 @@ fun SettingsScreen(
     var confirmRemove by rememberMmkvBool(AppConfig.PREF_CONFIRM_REMOVE, false)
     var doubleColumnDisplay by rememberMmkvBool(AppConfig.PREF_DOUBLE_COLUMN_DISPLAY, false)
     var groupAllDisplay by rememberMmkvBool(AppConfig.PREF_GROUP_ALL_DISPLAY, false)
-    var language by rememberMmkvString(AppConfig.PREF_LANGUAGE, "auto")
+    var language by remember {
+        mutableStateOf(
+            MmkvManager.decodeSettingsString(AppConfig.PREF_LANGUAGE, "auto") ?: "auto"
+        )
+    }
     var uiModeNight by rememberMmkvString(AppConfig.PREF_UI_MODE_NIGHT, "0")
+    var dynamicColor by rememberMmkvBool(AppConfig.PREF_DYNAMIC_COLOR, true)
 
     var ipv6Enabled by rememberMmkvBool(AppConfig.PREF_IPV6_ENABLED, false)
     var preferIpv6 by rememberMmkvBool(AppConfig.PREF_PREFER_IPV6, false)
@@ -143,6 +154,14 @@ fun SettingsScreen(
     val localProxyForced = hevTunEnabled
     val effectiveLocalProxy = enableLocalProxy || localProxyForced
     val muxXudpConcurrencyInt = muxXudpConcurrency.toIntOrNull() ?: 8
+
+    val dynamicColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    LaunchedEffect(dynamicColorSupported) {
+        if (!dynamicColorSupported && dynamicColor) {
+            dynamicColor = false
+            ThemeManager.setDynamicColorEnabled(false)
+        }
+    }
 
     val languageEntries = stringArrayResource(R.array.language_select).toList()
     val languageValues = stringArrayResource(R.array.language_select_value).toList()
@@ -168,7 +187,7 @@ fun SettingsScreen(
     val modeValues = stringArrayResource(R.array.mode_value).toList()
 
     Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             AppTopBar(
                 title = stringResource(R.string.title_settings),
@@ -220,12 +239,25 @@ fun SettingsScreen(
                         SettingsChangeManager.makeSetupGroupTab()
                     }
                 )
+                SettingsSwitchItem(
+                    title = stringResource(R.string.title_pref_dynamic_color),
+                    summary = stringResource(R.string.summary_pref_dynamic_color),
+                    checked = dynamicColor,
+                    enabled = dynamicColorSupported,
+                    onCheckedChange = {
+                        dynamicColor = it
+                        ThemeManager.setDynamicColorEnabled(it)
+                    }
+                )
                 SettingsListItem(
                     title = stringResource(R.string.title_language),
                     entries = languageEntries,
                     values = languageValues,
                     selectedValue = language,
-                    onSelected = { language = it }
+                    onSelected = {
+                        language = it
+                        AppLocaleManager.setApplicationLanguage(it)
+                    }
                 )
                 SettingsListItem(
                     title = stringResource(R.string.title_pref_ui_mode_night),
@@ -453,14 +485,14 @@ fun SettingsScreen(
                     onCheckedChange = { mux = it }
                 )
                 SettingsEditItem(
-                    title = stringResource(R.string.title_pref_mux_concurency),
+                    title = stringResource(R.string.title_pref_mux_concurrency),
                     value = muxConcurrency,
                     enabled = mux,
                     keyboardNumber = true,
                     onValueChanged = { muxConcurrency = it }
                 )
                 SettingsEditItem(
-                    title = stringResource(R.string.title_pref_mux_xudp_concurency),
+                    title = stringResource(R.string.title_pref_mux_xudp_concurrency),
                     value = muxXudpConcurrency,
                     enabled = mux,
                     keyboardNumber = true,
@@ -646,6 +678,7 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+            NavigationBarsSpacer()
         }
     }
 }

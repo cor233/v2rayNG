@@ -3,9 +3,12 @@ package com.v2ray.ang.ui.server
 import android.os.Bundle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -13,7 +16,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,12 +36,6 @@ import com.v2ray.ang.AppConfig.TLS
 import com.v2ray.ang.AppConfig.WIREGUARD_LOCAL_ADDRESS_V4
 import com.v2ray.ang.AppConfig.WIREGUARD_LOCAL_MTU
 import com.v2ray.ang.R
-import com.v2ray.ang.compose.AppTopBar
-import com.v2ray.ang.compose.ConfirmDialog
-import com.v2ray.ang.compose.FormDropdownField
-import com.v2ray.ang.compose.FormTextField
-import com.v2ray.ang.compose.SettingsSwitchItem
-import com.v2ray.ang.compose.verticalScrollbar
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.enums.EConfigType
 import com.v2ray.ang.enums.NetworkType
@@ -50,6 +46,12 @@ import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.CertificateFingerprintManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.ui.base.BaseComponentActivity
+import com.v2ray.ang.ui.compose.AppTopBar
+import com.v2ray.ang.ui.compose.DeleteConfirmDialog
+import com.v2ray.ang.ui.compose.FormDropdownField
+import com.v2ray.ang.ui.compose.FormTextField
+import com.v2ray.ang.ui.compose.SettingsSwitchItem
+import com.v2ray.ang.ui.compose.verticalScrollbar
 import com.v2ray.ang.util.JsonUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -255,7 +257,7 @@ fun ServerScreen(
     var finalMask by rememberSaveable { mutableStateOf(initialConfig.finalMask ?: "") }
     var kcpMtu by rememberSaveable { mutableStateOf(initialConfig.kcpMtu?.toString() ?: "") }
     var kcpTti by rememberSaveable { mutableStateOf(initialConfig.kcpTti?.toString() ?: "") }
-    var browserDialerMode by rememberSaveable { mutableStateOf(initialConfig.browserDialerMode ?: browserDialerOptions.firstOrNull() ?: "Disable") }
+    var browserDialerMode by rememberSaveable { mutableStateOf(initialConfig.browserDialerMode ?: "") }
     var streamSecurity by rememberSaveable { mutableStateOf(initialConfig.security ?: "") }
     var sni by rememberSaveable { mutableStateOf(initialConfig.sni ?: "") }
     var allowInsecure by rememberSaveable { mutableStateOf(initialConfig.insecure == true) }
@@ -339,7 +341,7 @@ fun ServerScreen(
     )
 
     Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             AppTopBar(
                 title = configType.toString(),
@@ -347,13 +349,13 @@ fun ServerScreen(
                 actions = {
                     if (guid.isNotEmpty() && !isRunning) {
                         IconButton(onClick = { showDeleteDialog = true }) {
-                            Icon(painterResource(R.drawable.ic_delete_24dp), stringResource(R.string.menu_item_del_config))
+                            Icon(painterResource(R.drawable.ic_delete_24dp), stringResource(R.string.acc_delete))
                         }
                     }
                     IconButton(onClick = {
                         onSave(buildProfileItem())
                     }) {
-                        Icon(painterResource(R.drawable.ic_fab_check), stringResource(R.string.menu_item_save_config))
+                        Icon(painterResource(R.drawable.ic_fab_check), stringResource(R.string.acc_save))
                     }
                 }
             )
@@ -367,7 +369,7 @@ fun ServerScreen(
                 .consumeWindowInsets(innerPadding)
                 .imePadding()
                 .verticalScrollbar(listState),
-            contentPadding = PaddingValues(bottom = 36.dp),
+            contentPadding = PaddingValues(bottom = 36.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item { FormTextField(stringResource(R.string.server_lab_remarks), remarks, { remarks = it }) }
@@ -515,10 +517,8 @@ fun ServerScreen(
         }
     }
     if (showDeleteDialog) {
-        ConfirmDialog(
-            message = stringResource(R.string.del_config_comfirm),
-            confirmText = stringResource(android.R.string.ok),
-            dismissText = stringResource(android.R.string.cancel),
+        DeleteConfirmDialog(
+            message = stringResource(R.string.confirm_delete_profile),
             onConfirm = { showDeleteDialog = false; onDelete() },
             onDismiss = { showDeleteDialog = false }
         )

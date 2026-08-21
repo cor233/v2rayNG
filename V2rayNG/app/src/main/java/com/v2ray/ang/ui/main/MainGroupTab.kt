@@ -16,7 +16,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.v2ray.ang.compose.colorFabActive
 import com.v2ray.ang.dto.GroupMapItem
 import com.v2ray.ang.dto.entities.ServersCache
 import kotlinx.coroutines.flow.StateFlow
@@ -45,7 +44,7 @@ fun GroupTabBar(
                     )
                     .clip(RoundedCornerShape(3.dp)),
                 width = Dp.Unspecified,
-                color = colorFabActive
+                color = MaterialTheme.colorScheme.secondary
             )
         },
         divider = {}

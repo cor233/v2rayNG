@@ -3,6 +3,8 @@ package com.v2ray.ang.ui.subscription
 import android.os.Bundle
 import android.text.TextUtils
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -12,7 +14,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,14 +27,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
-import com.v2ray.ang.compose.AppTopBar
-import com.v2ray.ang.compose.ConfirmDialog
-import com.v2ray.ang.compose.FormDropdownField
-import com.v2ray.ang.compose.FormTextField
-import com.v2ray.ang.compose.SettingsSwitchItem
-import com.v2ray.ang.compose.verticalScrollbar
 import com.v2ray.ang.dto.entities.SubscriptionItem
 import com.v2ray.ang.enums.EConfigType
+import com.v2ray.ang.extension.toLongEx
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.MmkvManager
@@ -41,6 +37,13 @@ import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SubscriptionUpdater
 import com.v2ray.ang.ui.base.BaseComponentActivity
+import com.v2ray.ang.ui.compose.AppTopBar
+import com.v2ray.ang.ui.compose.DeleteConfirmDialog
+import com.v2ray.ang.ui.compose.FormDropdownField
+import com.v2ray.ang.ui.compose.FormTextField
+import com.v2ray.ang.ui.compose.NavigationBarsSpacer
+import com.v2ray.ang.ui.compose.SettingsSwitchItem
+import com.v2ray.ang.ui.compose.verticalScrollbar
 import com.v2ray.ang.util.Utils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -154,7 +157,7 @@ fun SubEditScreen(
         subItem.filter = filter
         subItem.enabled = enabled
         subItem.autoUpdate = autoUpdate
-        subItem.updateInterval = updateInterval.toLong()
+        subItem.updateInterval = updateInterval.toLongEx()
         subItem.prevProfile = prevProfile
         subItem.nextProfile = nextProfile
         subItem.allowInsecureUrl = allowInsecureUrl
@@ -162,7 +165,7 @@ fun SubEditScreen(
     }
 
     Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             AppTopBar(
                 title = stringResource(R.string.title_sub_setting),
@@ -172,11 +175,11 @@ fun SubEditScreen(
                         IconButton(onClick = {
                             if (confirmRemove) showDeleteConfirm = true else onDelete()
                         }) {
-                            Icon(painterResource(R.drawable.ic_delete_24dp), contentDescription = stringResource(R.string.menu_item_del_config))
+                            Icon(painterResource(R.drawable.ic_delete_24dp), contentDescription = stringResource(R.string.acc_delete))
                         }
                     }
                     IconButton(onClick = { buildSubItem()?.let { onSave(it) } }) {
-                        Icon(painterResource(R.drawable.ic_fab_check), contentDescription = stringResource(R.string.menu_item_save_config))
+                        Icon(painterResource(R.drawable.ic_fab_check), contentDescription = stringResource(R.string.acc_save))
                     }
                 }
             )
@@ -226,7 +229,8 @@ fun SubEditScreen(
                 value = prevProfile,
                 options = profileSuggestions,
                 onValueChange = { prevProfile = it },
-                editable = true
+                editable = true,
+                supportingText = stringResource(R.string.sub_setting_entry_proxy_tip)
             )
             FormDropdownField(
                 label = stringResource(R.string.sub_setting_next_profile),
@@ -234,16 +238,16 @@ fun SubEditScreen(
                 value = nextProfile,
                 options = profileSuggestions,
                 onValueChange = { nextProfile = it },
-                editable = true
+                editable = true,
+                supportingText = stringResource(R.string.sub_setting_exit_proxy_tip)
             )
+            NavigationBarsSpacer()
         }
     }
 
     if (showDeleteConfirm) {
-        ConfirmDialog(
-            message = stringResource(R.string.del_config_comfirm),
-            confirmText = stringResource(android.R.string.ok),
-            dismissText = stringResource(android.R.string.cancel),
+        DeleteConfirmDialog(
+            message = stringResource(R.string.confirm_delete_subscription_group),
             onConfirm = onDelete,
             onDismiss = { showDeleteConfirm = false }
         )

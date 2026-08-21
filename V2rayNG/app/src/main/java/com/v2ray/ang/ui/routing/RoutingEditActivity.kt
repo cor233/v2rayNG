@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -16,8 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,12 +35,6 @@ import androidx.lifecycle.lifecycleScope
 import com.v2ray.ang.AppConfig.BUILTIN_OUTBOUND_TAGS
 import com.v2ray.ang.AppConfig.TAG_PROXY
 import com.v2ray.ang.R
-import com.v2ray.ang.compose.AppTopBar
-import com.v2ray.ang.compose.ConfirmDialog
-import com.v2ray.ang.compose.FormDropdownField
-import com.v2ray.ang.compose.FormTextField
-import com.v2ray.ang.compose.SettingsSwitchItem
-import com.v2ray.ang.compose.verticalScrollbar
 import com.v2ray.ang.dto.entities.RulesetItem
 import com.v2ray.ang.extension.nullIfBlank
 import com.v2ray.ang.extension.toast
@@ -47,10 +42,19 @@ import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.ui.apppicker.AppPickerActivity
 import com.v2ray.ang.ui.base.BaseComponentActivity
+import com.v2ray.ang.ui.compose.AppTopBar
+import com.v2ray.ang.ui.compose.DeleteConfirmDialog
+import com.v2ray.ang.ui.compose.FormDropdownField
+import com.v2ray.ang.ui.compose.FormTextField
+import com.v2ray.ang.ui.compose.NavigationBarsSpacer
+import com.v2ray.ang.ui.compose.SettingsSwitchItem
+import com.v2ray.ang.ui.compose.verticalScrollbar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
+
+private val ROUTING_NETWORK_OPTIONS = listOf("tcp", "udp", "tcp,udp")
 
 class RoutingEditActivity : BaseComponentActivity() {
     private val position by lazy { intent.getIntExtra("position", -1) }
@@ -116,6 +120,7 @@ fun RoutingEditScreen(
     onDelete: () -> Unit
 ) {
     val context = LocalContext.current
+    val processSelectTitle = stringResource(R.string.routing_settings_process_select)
     val scrollState = rememberScrollState()
 
     var remarks by rememberSaveable { mutableStateOf(initial?.remarks ?: "") }
@@ -130,6 +135,7 @@ fun RoutingEditScreen(
         mutableStateOf(initial?.outboundTag ?: BUILTIN_OUTBOUND_TAGS.first())
     }
     var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
+    val selectedNetwork = network.ifBlank { "tcp,udp" }
 
     val processPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -173,7 +179,7 @@ fun RoutingEditScreen(
     }
 
     Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             AppTopBar(
                 title = stringResource(R.string.routing_settings_rule_title),
@@ -183,14 +189,14 @@ fun RoutingEditScreen(
                         IconButton(onClick = { showDeleteConfirm = true }) {
                             Icon(
                                 painterResource(R.drawable.ic_delete_24dp),
-                                contentDescription = stringResource(R.string.menu_item_del_config)
+                                contentDescription = stringResource(R.string.acc_delete)
                             )
                         }
                     }
                     IconButton(onClick = { onSave(buildRuleset()) }) {
                         Icon(
                             painterResource(R.drawable.ic_fab_check),
-                            contentDescription = stringResource(R.string.menu_item_save_config)
+                            contentDescription = stringResource(R.string.acc_save)
                         )
                     }
                 }
@@ -217,21 +223,27 @@ fun RoutingEditScreen(
                 checked = locked,
                 onCheckedChange = { locked = it }
             )
+            Text(
+                text = stringResource(R.string.routing_settings_tips),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             FormTextField(
                 label = stringResource(R.string.routing_settings_domain),
-                placeholder = stringResource(R.string.routing_settings_tips),
+                placeholder = stringResource(R.string.routing_settings_comma_tip),
                 value = domain,
                 onValueChange = { domain = it }
             )
             FormTextField(
                 label = stringResource(R.string.routing_settings_ip),
-                placeholder = stringResource(R.string.routing_settings_tips),
+                placeholder = stringResource(R.string.routing_settings_comma_tip),
                 value = ip,
                 onValueChange = { ip = it }
             )
             FormTextField(
                 label = stringResource(R.string.routing_settings_process),
-                placeholder = stringResource(R.string.routing_settings_tips),
+                placeholder = stringResource(R.string.routing_settings_comma_tip),
                 value = processText,
                 onValueChange = { processText = it },
                 enabled = canUseProcess
@@ -248,7 +260,7 @@ fun RoutingEditScreen(
                             AppPickerActivity.createIntent(
                                 context = context,
                                 selectedPackages = current,
-                                title = context.getString(R.string.routing_settings_process_select)
+                                title = processSelectTitle
                             )
                         )
                     },
@@ -259,7 +271,7 @@ fun RoutingEditScreen(
                         contentDescription = null
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.routing_settings_process_select))
+                    Text(processSelectTitle)
                 }
             }
             FormTextField(
@@ -273,27 +285,30 @@ fun RoutingEditScreen(
                 value = protocol,
                 onValueChange = { protocol = it }
             )
-            FormTextField(
+            FormDropdownField(
                 label = stringResource(R.string.routing_settings_network),
-                placeholder = stringResource(R.string.routing_settings_network_tip),
-                value = network,
+                value = selectedNetwork,
+                options = ROUTING_NETWORK_OPTIONS,
                 onValueChange = { network = it }
             )
             FormDropdownField(
                 label = stringResource(R.string.routing_settings_outbound_tag),
+                placeholder = stringResource(
+                    R.string.routing_settings_outbound_tag_hint,
+                    stringResource(R.string.server_lab_remarks)
+                ),
                 value = outboundTag,
                 options = outboundSuggestions,
                 onValueChange = { outboundTag = it },
                 editable = true
             )
             Spacer(modifier = Modifier.height(36.dp))
+            NavigationBarsSpacer()
         }
 
         if (showDeleteConfirm) {
-            ConfirmDialog(
-                message = stringResource(R.string.del_config_comfirm),
-                confirmText = stringResource(android.R.string.ok),
-                dismissText = stringResource(android.R.string.cancel),
+            DeleteConfirmDialog(
+                message = stringResource(R.string.confirm_delete_routing_rule),
                 onConfirm = onDelete,
                 onDismiss = { showDeleteConfirm = false }
             )

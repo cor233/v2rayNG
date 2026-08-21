@@ -13,9 +13,10 @@ import com.v2ray.ang.dto.entities.SubscriptionCache
 import com.v2ray.ang.enums.NotificationChannelType
 import com.v2ray.ang.extension.serializable
 import com.v2ray.ang.handler.AngConfigManager
+import com.v2ray.ang.handler.AppLocaleManager
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.helper.NotificationHelper
 import com.v2ray.ang.util.LogUtil
-import com.v2ray.ang.util.NotificationHelper
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +28,10 @@ import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 
 class SubscriptionUpdateService : Service() {
+
+    override fun attachBaseContext(newBase: Context?) {
+        super.attachBaseContext(newBase?.let(AppLocaleManager::localizedContext))
+    }
 
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
@@ -57,6 +62,12 @@ class SubscriptionUpdateService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        NotificationHelper.startForeground(
+            this,
+            NotificationChannelType.SUBSCRIPTION_UPDATE,
+            getString(R.string.title_pref_auto_update_subscription),
+            getString(R.string.app_name)
+        )
         val message = intent?.serializable<SubscriptionUpdateMessage>("content")
         if (message == null) {
             stopSelf(startId)
@@ -81,13 +92,6 @@ class SubscriptionUpdateService : Service() {
     private fun handleUpdateStart(message: SubscriptionUpdateMessage) {
         LogUtil.i(AppConfig.TAG, "SubscriptionUpdateService starting update task for ${message.subIds.size} subscriptions")
 
-        NotificationHelper.startForeground(
-            this,
-            NotificationChannelType.SUBSCRIPTION_UPDATE,
-            getString(R.string.title_pref_auto_update_subscription),
-            getString(R.string.app_name)
-        )
-
         runningTasks.incrementAndGet()
         serviceScope.launch {
             updateSemaphore.withPermit {
@@ -109,7 +113,7 @@ class SubscriptionUpdateService : Service() {
 
     private suspend fun updateSingle(subId: String, forcedUpdate: Boolean) {
         val subItem = MmkvManager.decodeSubscription(subId) ?: return
-        if(!subItem.enabled || subItem.url.isEmpty()){
+        if (!subItem.enabled || subItem.url.isEmpty()) {
             return
         }
 
@@ -119,7 +123,7 @@ class SubscriptionUpdateService : Service() {
         showNotification(
             context = this,
             titleResId = R.string.title_pref_auto_update_subscription,
-            content = "Updating ${subItem.remarks}"
+            content = getString(R.string.subscription_update_updating, subItem.remarks)
         )
 
         if (forcedUpdate || MmkvManager.decodeSettingsBool(AppConfig.PREF_UPDATE_SUBSCRIPTION, false)) {
@@ -185,13 +189,17 @@ class SubscriptionUpdateService : Service() {
     private fun handleWorkerEvent(event: RealPingEvent, remarks: String, onWorkerDone: () -> Unit) {
         when (event) {
             is RealPingEvent.Progress -> {
-                val text = "${event.text} in $remarks"
+                val notificationText = getString(
+                    R.string.subscription_update_progress,
+                    event.text,
+                    remarks
+                )
                 showNotification(
                     context = this,
                     titleResId = R.string.title_real_ping_all_server,
-                    content = text
+                    content = notificationText
                 )
-                LogUtil.i(AppConfig.TAG, "SubscriptionUpdateService: $text")
+                LogUtil.i(AppConfig.TAG, "SubscriptionUpdateService: ${event.text} in $remarks")
             }
 
             is RealPingEvent.Result -> {

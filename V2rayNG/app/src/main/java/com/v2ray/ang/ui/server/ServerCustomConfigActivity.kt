@@ -6,6 +6,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,7 +27,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -55,11 +56,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
-import com.v2ray.ang.compose.AppTopBar
-import com.v2ray.ang.compose.ConfirmDialog
-import com.v2ray.ang.compose.FormTextField
-import com.v2ray.ang.compose.horizontalScrollbar
-import com.v2ray.ang.compose.verticalScrollbar
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.enums.EConfigType
 import com.v2ray.ang.extension.toast
@@ -68,6 +64,12 @@ import com.v2ray.ang.fmt.CustomFmt
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.ui.base.BaseComponentActivity
+import com.v2ray.ang.ui.compose.AppTopBar
+import com.v2ray.ang.ui.compose.DeleteConfirmDialog
+import com.v2ray.ang.ui.compose.FormTextField
+import com.v2ray.ang.ui.compose.NavigationBarsSpacer
+import com.v2ray.ang.ui.compose.horizontalScrollbar
+import com.v2ray.ang.ui.compose.verticalScrollbar
 import com.v2ray.ang.util.LogUtil
 import kotlinx.coroutines.flow.collectLatest
 
@@ -120,9 +122,14 @@ class ServerCustomConfigActivity : BaseComponentActivity() {
                 "Failed to parse custom configuration",
                 e
             )
+            val detail = e.cause?.message?.takeIf { it.isNotBlank() }
+                ?: e.message?.takeIf { it.isNotBlank() }
             toast(
-                "${getString(R.string.toast_malformed_josn)} " +
-                        "${e.cause?.message.orEmpty()}"
+                if (detail.isNullOrBlank()) {
+                    getString(R.string.toast_malformed_json)
+                } else {
+                    getString(R.string.toast_malformed_json_detail, detail)
+                }
             )
             return false
         }
@@ -305,7 +312,7 @@ fun ServerCustomConfigScreen(
     }
 
     Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             AppTopBar(
                 title = EConfigType.CUSTOM.toString(),
@@ -315,14 +322,14 @@ fun ServerCustomConfigScreen(
                         IconButton(onClick = { showDeleteConfirm = true }) {
                             Icon(
                                 painterResource(R.drawable.ic_delete_24dp),
-                                contentDescription = stringResource(R.string.menu_item_del_config)
+                                contentDescription = stringResource(R.string.acc_delete)
                             )
                         }
                     }
                     IconButton(onClick = { onSave(remarks, textFieldState.text.toString()) }) {
                         Icon(
                             painterResource(R.drawable.ic_fab_check),
-                            contentDescription = stringResource(R.string.menu_item_save_config)
+                            contentDescription = stringResource(R.string.acc_save)
                         )
                     }
                 }
@@ -473,14 +480,13 @@ fun ServerCustomConfigScreen(
                         .horizontalScrollbar(scrollState = horizontalScroll)
                 )
             }
+            NavigationBarsSpacer()
         }
     }
 
     if (showDeleteConfirm) {
-        ConfirmDialog(
-            message = stringResource(R.string.del_config_comfirm),
-            confirmText = stringResource(android.R.string.ok),
-            dismissText = stringResource(android.R.string.cancel),
+        DeleteConfirmDialog(
+            message = stringResource(R.string.confirm_delete_profile),
             onConfirm = {
                 showDeleteConfirm = false
                 onDelete()
